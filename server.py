@@ -52,20 +52,22 @@ async def tcp_proxy_handler(local_host, local_port, remote_reader, remote_writer
         await remote_writer.wait_closed()
 
 async def start_tcp_server(key: str, target_host: str, target_port: int):
-    """Starts a TCP proxy server to forward to target_host:target_port"""
+    try:
+        async def handle_tcp_client(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+            logger.info(f"TCP client connected for {key}")
+            try:
+                await tcp_proxy_handler(target_host, target_port, reader, writer)
+            except Exception as e:
+                logger.error(f"TCP client error: {e}")
 
-    async def handle_tcp_client(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
-        logger.info(f"TCP client connected for {key}")
-        try:
-            await tcp_proxy_handler(target_host, target_port, reader, writer)
-        except Exception as e:
-            logger.error(f"TCP client error: {e}")
-
-    server = await asyncio.start_server(handle_tcp_client, host="0.0.0.0", port=0)
-    sock = server.sockets[0]
-    port = sock.getsockname()[1]
-    logger.info(f"TCP proxy server started for {key} on port {port}")
-    return server, port
+        server = await asyncio.start_server(handle_tcp_client, host="0.0.0.0", port=0)
+        sock = server.sockets[0]
+        port = sock.getsockname()[1]
+        logger.info(f"TCP proxy server started for {key} on port {port}")
+        return server, port
+    except Exception as e:
+        logger.error(f"Failed to start TCP proxy server: {e}")
+        raise
 
 # --- WebSocket Endpoint ---
 
