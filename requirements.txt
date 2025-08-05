@@ -2,4 +2,4 @@ fastapi
 uvicorn
 httpx
 websockets
-pydantic<2.0
+pydantic
