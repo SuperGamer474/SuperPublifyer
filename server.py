@@ -3,7 +3,8 @@ import json
 import logging
 from typing import Dict
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request
-from fastapi.responses import Response
+from fastapi.responses import Response, FileResponse
+from fastapi.staticfiles import StaticFiles
 import uvicorn
 from pydantic import BaseModel, constr
 
@@ -12,32 +13,40 @@ logger = logging.getLogger("SuperPublifyer")
 
 app = FastAPI()
 
-# Store connected clients: key = "username/project"
+# Serve static files (including 404.html) from the "static" directory
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# Store connected clients: key = project_name
 # Value = {
 #    "ws": WebSocket,
 #    "queue": asyncio.Queue[str],
 #    "registered": bool,
 #    "local_url": str,
-#    "protocol": str ("http" or "https")
+#    "protocol": str
 # }
 clients: Dict[str, dict] = {}
 
-CREDENTIAL_REGEX = r"^[a-zA-Z0-9_-]{3,50}$"
 PROJECT_REGEX = r"^[a-zA-Z0-9_-]{3,50}$"
 
 class RegisterRequest(BaseModel):
-    username: constr(regex=CREDENTIAL_REGEX)
     project_name: constr(regex=PROJECT_REGEX)
     local_url: str  # host:port (no protocol)
-    protocol: str  # http/https
+    protocol: constr(regex="^(http|https)$")
 
-@app.websocket("/ws/{username}/{project}")
-async def websocket_endpoint(websocket: WebSocket, username: str, project: str):
-    key = f"{username}/{project}"
+@app.websocket("/ws/{project}")
+async def websocket_endpoint(websocket: WebSocket, project: str):
+    # Reject duplicate project names
+    if project in clients:
+        await websocket.accept()
+        await websocket.send_json({"error": "Duplicate project name connected"})
+        await websocket.close(code=1000)
+        logger.warning(f"Rejected duplicate WS connection for project: {project}")
+        return
+
     await websocket.accept()
-    message_queue = asyncio.Queue()
+    message_queue: asyncio.Queue = asyncio.Queue()
 
-    clients[key] = {
+    clients[project] = {
         "ws": websocket,
         "queue": message_queue,
         "registered": False,
@@ -45,61 +54,47 @@ async def websocket_endpoint(websocket: WebSocket, username: str, project: str):
         "protocol": None,
     }
 
-    logger.info(f"🟢 WebSocket client connected: {key}")
-
+    logger.info(f"🟢 WebSocket client connected: {project}")
     try:
         while True:
             msg = await websocket.receive_text()
             await message_queue.put(msg)
     except WebSocketDisconnect:
-        logger.info(f"🔴 WebSocket client disconnected: {key}")
-        del clients[key]
+        logger.info(f"🔴 WebSocket client disconnected: {project}")
+        del clients[project]
 
 @app.post("/register")
 async def register(req: RegisterRequest):
-    key = f"{req.username}/{req.project_name}"
-
-    if key not in clients:
+    project = req.project_name
+    if project not in clients:
         raise HTTPException(status_code=400, detail="WebSocket client not connected yet")
-
-    if clients[key].get("registered"):
+    if clients[project]["registered"]:
         raise HTTPException(status_code=409, detail="Project already registered")
 
-    # Validate local_url format host:port
     if ":" not in req.local_url:
         raise HTTPException(status_code=400, detail="Invalid local_url, must be host:port")
-
     host, port_str = req.local_url.split(":")
     try:
-        port = int(port_str)
-    except:
+        int(port_str)
+    except ValueError:
         raise HTTPException(status_code=400, detail="Port must be an integer")
 
-    protocol = req.protocol.lower()
-    if protocol not in ["http", "https"]:
-        raise HTTPException(status_code=400, detail="Protocol must be http or https")
+    clients[project]["registered"] = True
+    clients[project]["local_url"] = req.local_url
+    clients[project]["protocol"] = req.protocol
 
-    clients[key]["registered"] = True
-    clients[key]["local_url"] = req.local_url
-    clients[key]["protocol"] = protocol
+    logger.info(f"Registered project={project} protocol={req.protocol} local_url={req.local_url}")
+    return {"status": "success", "message": "Registration successful"}
 
-    logger.info(f"Registered {key} protocol={protocol} local_url={req.local_url}")
-
-    return {
-        "status": "success",
-        "message": "Registration successful"
-    }
-
-@app.api_route("/{username}/{project}/{path:path}", methods=["GET","POST","PUT","DELETE","PATCH","OPTIONS","HEAD"])
-async def http_proxy(username: str, project: str, path: str, request: Request):
-    key = f"{username}/{project}"
-    client = clients.get(key)
-    if not client or not client.get("registered"):
-        raise HTTPException(404, "Project not registered or WebSocket not connected")
+@app.api_route("/{project}/{path:path}", methods=["GET","POST","PUT","DELETE","PATCH","OPTIONS","HEAD"])
+async def http_proxy(project: str, path: str, request: Request):
+    client = clients.get(project)
+    if not client or not client["registered"]:
+        # Serve custom 404.html page
+        return FileResponse("static/404.html", status_code=404)
 
     ws = client["ws"]
     queue = client["queue"]
-
     req_body = await request.body()
     data = {
         "method": request.method,
@@ -109,11 +104,8 @@ async def http_proxy(username: str, project: str, path: str, request: Request):
         "query": str(request.query_params)
     }
 
-    # Send request to client via WS
     await ws.send_json(data)
-
     try:
-        # Wait for client response via WS (JSON)
         response_msg = await asyncio.wait_for(queue.get(), timeout=30)
         response_data = json.loads(response_msg)
     except asyncio.TimeoutError:
@@ -126,4 +118,4 @@ async def http_proxy(username: str, project: str, path: str, request: Request):
     )
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0")
