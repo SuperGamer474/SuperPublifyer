@@ -69,7 +69,7 @@ async def register(req: RegisterRequest):
     if project not in clients:
         raise HTTPException(status_code=400, detail="WebSocket client not connected yet")
     if clients[project]["registered"]:
-        raise HTTPException(status_code=409, detail="Project already registered")
+        raise HTTPException(status_code=409, detail="Project name taken")
 
     if ":" not in req.local_url:
         raise HTTPException(status_code=400, detail="Invalid local_url, must be host:port")
@@ -86,7 +86,48 @@ async def register(req: RegisterRequest):
     logger.info(f"Registered project={project} protocol={req.protocol} local_url={req.local_url}")
     return {"status": "success", "message": "Registration successful"}
 
-@app.api_route("/{project}/{path:path}", methods=["GET","POST","PUT","DELETE","PATCH","OPTIONS","HEAD"])
+@app.api_route("/{project}/{path:path}", methods = [
+    "ACL",
+    "BASELINE-CONTROL",
+    "BIND",
+    "CHECKIN",
+    "CHECKOUT",
+    "CONNECT",
+    "COPY",
+    "DELETE",
+    "GET",
+    "HEAD",
+    "LABEL",
+    "LINK",
+    "LOCK",
+    "MERGE",
+    "MKACTIVITY",
+    "MKCALENDAR",
+    "MKCOL",
+    "MKREDIRECTREF",
+    "MKWORKSPACE",
+    "MOVE",
+    "OPTIONS",
+    "ORDERPATCH",
+    "PATCH",
+    "POST",
+    "PRI",
+    "PROPFIND",
+    "PROPPATCH",
+    "PUT",
+    "REBIND",
+    "REPORT",
+    "SEARCH",
+    "TRACE",
+    "UNBIND",
+    "UNCHECKOUT",
+    "UNLINK",
+    "UNLOCK",
+    "UPDATE",
+    "UPDATEREDIRECTREF",
+    "VERSION-CONTROL",
+    "*"
+])
 async def http_proxy(project: str, path: str, request: Request):
     client = clients.get(project)
     if not client or not client["registered"]:
