@@ -112,6 +112,7 @@ async def start_tcp_proxy(route_key: str, target_url: str):
             await asyncio.gather(
                 pipe_data(reader, target_writer),
                 pipe_data(target_reader, writer)
+            )
         except Exception as e:
             logger.error(f"TCP Proxy error: {str(e)}")
         finally:
