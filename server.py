@@ -1,9 +1,10 @@
+import re
 import asyncio
 import json
 import logging
 from typing import Dict
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request
-from fastapi.responses import Response, FileResponse
+from fastapi.responses import Response, FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 import uvicorn
 from pydantic import BaseModel, constr
@@ -131,7 +132,6 @@ async def register(req: RegisterRequest):
 async def http_proxy(project: str, path: str, request: Request):
     client = clients.get(project)
     if not client or not client["registered"]:
-        # Serve custom 404.html page
         return FileResponse("static/404.html", status_code=404)
 
     ws = client["ws"]
@@ -146,16 +146,29 @@ async def http_proxy(project: str, path: str, request: Request):
     }
 
     await ws.send_json(data)
+
     try:
         response_msg = await asyncio.wait_for(queue.get(), timeout=30)
         response_data = json.loads(response_msg)
     except asyncio.TimeoutError:
         raise HTTPException(504, "Timeout waiting for client response")
 
+    content = response_data.get("body", "")
+    status_code = response_data.get("status_code", 200)
+    headers = response_data.get("headers", {})
+
+    # --- NEW: rewrite URLs in HTML ---
+    if headers.get("content-type", "").startswith("text/html"):
+        app_name = project  # or however you want to determine the prefix
+        # Regex to match href, src, action etc. starting with /
+        pattern = r'(href|src|action)=["\'](/[^"\']*)["\']'
+        content = re.sub(pattern, rf'\1="/{app_name}\2"', content)
+    # --------------------------------
+
     return Response(
-        content=response_data.get("body", ""),
-        status_code=response_data.get("status_code", 200),
-        headers=response_data.get("headers", {})
+        content=content,
+        status_code=status_code,
+        headers=headers
     )
 
 if __name__ == "__main__":
