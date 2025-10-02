@@ -159,11 +159,12 @@ async def http_proxy(project: str, path: str, request: Request):
 
     # --- NEW: rewrite URLs in HTML ---
     if headers.get("content-type", "").startswith("text/html"):
-        app_name = project  # or however you want to determine the prefix
-        # Regex to match href, src, action etc. starting with /
+        app_name = project
         pattern = r'(href|src|action)=["\'](/[^"\']*)["\']'
         content = re.sub(pattern, rf'\1="/{app_name}\2"', content)
-    # --------------------------------
+
+        # Remove Content-Length so it doesn't mismatch
+        headers.pop("content-length", None)
 
     return Response(
         content=content,
