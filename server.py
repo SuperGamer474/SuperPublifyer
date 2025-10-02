@@ -157,13 +157,14 @@ async def http_proxy(project: str, path: str, request: Request):
     status_code = response_data.get("status_code", 200)
     headers = response_data.get("headers", {})
 
-    # --- NEW: rewrite URLs in HTML ---
+    # --- rewrite URLs in HTML safely ---
     if headers.get("content-type", "").startswith("text/html"):
         app_name = project
-        pattern = r'(href|src|action)=["\'](/[^"\']*)["\']'
-        content = re.sub(pattern, rf'\1="/{app_name}\2"', content)
+        # Only match local paths starting with / but not external links
+        pattern = r'(href|src|action)=["\']/(?!https?:|//)([^"\']*)["\']'
+        content = re.sub(pattern, rf'\1="/{app_name}/\2"', content)
 
-        # Remove Content-Length so it doesn't mismatch
+        # Remove Content-Length to avoid mismatch
         headers.pop("content-length", None)
 
     return Response(
