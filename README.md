@@ -6,7 +6,7 @@
 
 ## Quick TL;DR
 - Server is already hosted: `https://superpublifyer.onrender.com`
-- Alternative URL: `http://public.servehttp.com`   
+- Alternative URL: `http://public.servehttp.com` (Currently not working)   
 - Download and run the client only.
 
 ---
