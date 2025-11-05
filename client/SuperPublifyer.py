@@ -271,7 +271,7 @@ class SuperPublifyerClientGUI(QWidget):
             urls.append((f"{protocol}://127.0.0.1:{port_part}/", "(Local only)"))
         else:
             urls.append((f"{protocol}://{local_url}/", "(Local only)"))
-        urls.append((f"http://public.servehttp.com/{project}/", "Public"))
+        urls.append((f"http://public.servehttp.com/{project}/", "Public - May not work"))
         urls.append((f"https://superpublifyer.onrender.com/{project}/", "Public"))
 
         self.signals.show_urls.emit(urls)
